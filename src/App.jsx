@@ -234,6 +234,8 @@ const POLL_MS = 5000;
 function Dashboard({ user, onLogout }) {
   const [lists, setLists] = useState([]);
   const [tasks, setTasks] = useState([]);
+  const [taskCounts, setTaskCounts] = useState({}); // { [listId]: incompleteCount }
+  const [taskFontSize, setTaskFontSize] = useState(14); // px
   const [listIdx, setListIdx] = useState(0);
   const [taskIdx, setTaskIdx] = useState(0);
   const [panel, setPanel] = useState('lists'); // 'lists' | 'tasks'
@@ -257,6 +259,18 @@ function Dashboard({ user, onLogout }) {
       setLists(data ?? []);
       setLastUpdated(new Date());
       setApiError(null);
+      // Fetch incomplete task counts for all lists in the background
+      if (data?.length) {
+        Promise.all(data.map((list) => api.getTasksByListId(list.id).catch(() => [])))
+          .then((results) => {
+            const counts = {};
+            data.forEach((list, i) => {
+              counts[list.id] = (results[i] ?? []).filter((t) => !t.is_completed).length;
+            });
+            setTaskCounts(counts);
+          })
+          .catch(() => { });
+      }
     } catch (err) {
       setApiError(err.message);
     }
@@ -270,6 +284,10 @@ function Dashboard({ user, onLogout }) {
     try {
       const data = await api.getTasksByListId(selectedList.id);
       setTasks(data ?? []);
+      setTaskCounts((prev) => ({
+        ...prev,
+        [selectedList.id]: (data ?? []).filter((t) => !t.is_completed).length,
+      }));
     } catch (err) {
       console.error('Tasks fetch failed:', err.message);
     }
@@ -338,6 +356,16 @@ function Dashboard({ user, onLogout }) {
       if (key === 'n' || key === 'N') {
         if (panel === 'lists') setShowNewList(true);
         else if (selectedList) setShowNewTask(true);
+        return;
+      }
+
+      // +/= and -: task font size
+      if (key === '+' || key === '=') {
+        setTaskFontSize((s) => Math.min(22, s + 1));
+        return;
+      }
+      if (key === '-') {
+        setTaskFontSize((s) => Math.max(10, s - 1));
         return;
       }
 
@@ -439,6 +467,9 @@ function Dashboard({ user, onLogout }) {
                 >
                   <span className="row-icon">{idx === listIdx ? '▸' : ' '}</span>
                   <span className="row-name">{list.name}</span>
+                  {taskCounts[list.id] > 0 && (
+                    <span className="list-task-count">{taskCounts[list.id]}</span>
+                  )}
                 </div>
               ))
             )}
@@ -449,7 +480,7 @@ function Dashboard({ user, onLogout }) {
         </div>
 
         {/* Tasks panel */}
-        <div className={`panel panel-tasks ${panel === 'tasks' ? 'is-active' : ''}`}>
+        <div className={`panel panel-tasks ${panel === 'tasks' ? 'is-active' : ''}`} style={{ '--task-fs': `${taskFontSize}px` }}>
           <div className="panel-head">
             <span>{selectedList ? selectedList.name : 'Select a list'}</span>
             {tasks.length > 0 && (
@@ -514,7 +545,7 @@ function Dashboard({ user, onLogout }) {
             )}
           </div>
           <div className="panel-foot">
-            <kbd>N</kbd> New &nbsp; <kbd>D</kbd> Delete &nbsp; <kbd>Enter</kbd> Toggle done
+            <kbd>N</kbd> New &nbsp; <kbd>D</kbd> Delete &nbsp; <kbd>Enter</kbd> Toggle done &nbsp; <kbd>+</kbd><kbd>-</kbd> Font size
           </div>
         </div>
       </div>
