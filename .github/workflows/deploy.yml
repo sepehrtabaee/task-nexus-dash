@@ -33,4 +33,4 @@ jobs:
       - name: Run dashboard script on Pi
         run: |
           ssh ${{ secrets.PI_USER }}@${{ secrets.PI_HOST }} \
-          "cd ~/task-manager-pi && ./start-dashboard.sh"
+          "cd ~/task-manager-pi && /home/lordstz/start-dashboard.sh"
