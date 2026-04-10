@@ -28,10 +28,9 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
 
           scp -o StrictHostKeyChecking=no -r ./* \
-            ${{ secrets.PI_USER }}@${{ secrets.PI_HOST }}:/home/lordstz/test
+            ${{ secrets.PI_USER }}@${{ secrets.PI_HOST }}:/home/lordstz/task-manager-pi
 
-      # - name: Restart app (optional)
-      #   run: |
-      #     ssh -o StrictHostKeyChecking=no \
-      #       ${{ secrets.PI_USER }}@${{ secrets.PI_HOST }} \
-      #       "cd /home/pi/my-folder && pm2 restart app || true"
+      - name: Run dashboard script on Pi
+        run: |
+          ssh ${{ secrets.PI_USER }}@${{ secrets.PI_HOST }} \
+          "cd ~/task-manager-pi && ./start-dashboard.sh"
