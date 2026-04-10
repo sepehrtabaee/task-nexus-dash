@@ -283,7 +283,8 @@ function Dashboard({ user, onLogout }) {
     }
     try {
       const data = await api.getTasksByListId(selectedList.id);
-      setTasks(data ?? []);
+      const sorted = [...(data ?? [])].sort((a, b) => a.is_completed - b.is_completed);
+      setTasks(sorted);
       setTaskCounts((prev) => ({
         ...prev,
         [selectedList.id]: (data ?? []).filter((t) => !t.is_completed).length,
