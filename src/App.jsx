@@ -239,6 +239,7 @@ function Dashboard({ user, onLogout }) {
   const [listIdx, setListIdx] = useState(0);
   const [taskIdx, setTaskIdx] = useState(0);
   const [panel, setPanel] = useState('lists'); // 'lists' | 'tasks'
+  const [concise, setConcise] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [apiError, setApiError] = useState(null);
 
@@ -261,7 +262,7 @@ function Dashboard({ user, onLogout }) {
       setApiError(null);
       // Fetch incomplete task counts for all lists in the background
       if (data?.length) {
-        Promise.all(data.map((list) => api.getTasksByListId(list.id).catch(() => [])))
+        Promise.all(data.map((list) => api.getTasksByListId(list.id, concise).catch(() => [])))
           .then((results) => {
             const counts = {};
             data.forEach((list, i) => {
@@ -274,7 +275,7 @@ function Dashboard({ user, onLogout }) {
     } catch (err) {
       setApiError(err.message);
     }
-  }, [user.id]);
+  }, [user.id, concise]);
 
   const fetchTasks = useCallback(async () => {
     if (!selectedList) {
@@ -282,7 +283,7 @@ function Dashboard({ user, onLogout }) {
       return;
     }
     try {
-      const data = await api.getTasksByListId(selectedList.id);
+      const data = await api.getTasksByListId(selectedList.id, concise);
       const sorted = [...(data ?? [])].sort((a, b) => a.is_completed - b.is_completed);
       setTasks(sorted);
       setTaskCounts((prev) => ({
@@ -292,7 +293,7 @@ function Dashboard({ user, onLogout }) {
     } catch (err) {
       console.error('Tasks fetch failed:', err.message);
     }
-  }, [selectedList?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedList?.id, concise]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Initial load + polling
   useEffect(() => {
@@ -370,6 +371,12 @@ function Dashboard({ user, onLogout }) {
         return;
       }
 
+      // C: toggle concise mode
+      if (key === 'c' || key === 'C') {
+        setConcise((v) => !v);
+        return;
+      }
+
       // D / Delete: delete item
       if (key === 'd' || key === 'D' || key === 'Delete') {
         if (panel === 'lists' && selectedList) {
@@ -383,7 +390,7 @@ function Dashboard({ user, onLogout }) {
 
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [modalOpen, panel, lists, tasks, listIdx, taskIdx, selectedList]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [modalOpen, panel, lists, tasks, listIdx, taskIdx, selectedList, concise]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
@@ -434,6 +441,9 @@ function Dashboard({ user, onLogout }) {
         <div className="header-right">
           {apiError && <span className="api-error">⚠ {apiError}</span>}
           {timeStr && !apiError && <span className="last-updated">↺ {timeStr}</span>}
+          <span className={`concise-badge ${concise ? 'is-on' : 'is-off'}`}>
+            {concise ? 'Concise ON' : 'Concise OFF'}
+          </span>
           <button className="btn-ghost" onClick={onLogout}>Change User</button>
         </div>
       </header>
@@ -558,6 +568,7 @@ function Dashboard({ user, onLogout }) {
         <span><kbd>Enter</kbd> Select / Toggle</span>
         <span><kbd>N</kbd> New</span>
         <span><kbd>D</kbd> Delete</span>
+        <span><kbd>C</kbd> Toggle concise</span>
       </footer>
 
       {/* Modals */}

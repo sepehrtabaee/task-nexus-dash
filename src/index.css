@@ -186,6 +186,22 @@ body {
   font-size: 0.75rem;
 }
 
+.concise-badge {
+  font-size: 0.7rem;
+  padding: 2px 7px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+.concise-badge.is-on {
+  color: var(--green, #4caf50);
+  border-color: var(--green, #4caf50);
+}
+.concise-badge.is-off {
+  color: var(--text-dim);
+}
+
 .btn-ghost {
   background: transparent;
   border: 1px solid var(--border);
