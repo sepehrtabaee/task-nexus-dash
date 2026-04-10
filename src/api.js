@@ -33,7 +33,7 @@ export const getListsByUserId = (userId) =>
   request(`/api/lists/user/${userId}`);
 
 export const getTasksByListId = (listId) =>
-  request(`/api/tasks/list/${listId}`);
+  request(`/api/tasks/list/${listId}?concise=true`);
 
 export const createList = (data) =>
   request('/api/lists', {
