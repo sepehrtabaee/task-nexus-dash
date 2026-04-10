@@ -8,7 +8,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -29,6 +29,7 @@ jobs:
 
           scp -o StrictHostKeyChecking=no -r ./* \
             ${{ secrets.PI_USER }}@${{ secrets.PI_HOST }}:/home/lordstz/task-manager-pi
+
 
       - name: Run dashboard script on Pi
         run: |
