@@ -1,7 +1,12 @@
 const BASE = import.meta.env.VITE_API_URL || '';
+const TOKEN = import.meta.env.VITE_API_TOKEN;
 
 async function request(path, options = {}) {
-  const res = await fetch(`${BASE}${path}`, options);
+  const headers = {
+    ...(TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {}),
+    ...options.headers,
+  };
+  const res = await fetch(`${BASE}${path}`, { ...options, headers });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`${res.status}: ${text || res.statusText}`);
