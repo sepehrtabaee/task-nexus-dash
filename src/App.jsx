@@ -239,7 +239,7 @@ function Dashboard({ user, onLogout }) {
   const [listIdx, setListIdx] = useState(0);
   const [taskIdx, setTaskIdx] = useState(0);
   const [panel, setPanel] = useState('lists'); // 'lists' | 'tasks'
-  const [concise, setConcise] = useState(false);
+  const [concise, setConcise] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [apiError, setApiError] = useState(null);
 
