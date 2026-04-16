@@ -248,6 +248,9 @@ function Dashboard({ user, onLogout }) {
   const [showNewTask, setShowNewTask] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null); // { type, id, name }
 
+  const selectedListRowRef = useRef(null);
+  const selectedTaskRowRef = useRef(null);
+
   const modalOpen = showNewList || showNewTask || !!confirmDelete;
 
   const selectedList = lists[listIdx] ?? null;
@@ -312,6 +315,16 @@ function Dashboard({ user, onLogout }) {
   useEffect(() => {
     setTaskIdx(0);
   }, [listIdx]);
+
+  // Scroll selected list row into view on keyboard navigation
+  useEffect(() => {
+    selectedListRowRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [listIdx]);
+
+  // Scroll selected task row into view on keyboard navigation
+  useEffect(() => {
+    selectedTaskRowRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [taskIdx]);
 
   // ── Keyboard navigation ────────────────────────────────────────────────────
 
@@ -466,6 +479,7 @@ function Dashboard({ user, onLogout }) {
               lists.map((list, idx) => (
                 <div
                   key={list.id}
+                  ref={idx === listIdx ? selectedListRowRef : null}
                   className={`row row-list ${idx === listIdx ? 'is-selected' : ''}`}
                   onClick={() => {
                     setListIdx(idx);
@@ -518,6 +532,7 @@ function Dashboard({ user, onLogout }) {
                 return (
                   <div
                     key={task.id}
+                    ref={idx === taskIdx ? selectedTaskRowRef : null}
                     className={`row row-task ${isSelected ? 'is-selected' : ''} ${task.is_completed ? 'is-done' : ''}`}
                     onClick={() => {
                       setTaskIdx(idx);
