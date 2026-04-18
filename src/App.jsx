@@ -230,6 +230,12 @@ function ConfirmModal({ message, onConfirm, onClose }) {
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 const POLL_MS = 15000;
+const NIGHT_POLL_MS = 60000;
+
+function getPollInterval(now = new Date()) {
+  const hour = now.getHours();
+  return hour >= 2 && hour < 6 ? NIGHT_POLL_MS : POLL_MS;
+}
 
 function Dashboard({ user, onLogout }) {
   const [lists, setLists] = useState([]);
@@ -291,15 +297,33 @@ function Dashboard({ user, onLogout }) {
 
   // Initial load + polling
   useEffect(() => {
-    fetchLists();
-    const id = setInterval(fetchLists, POLL_MS);
-    return () => clearInterval(id);
+    let timeoutId;
+    let cancelled = false;
+    const tick = async () => {
+      await fetchLists();
+      if (cancelled) return;
+      timeoutId = setTimeout(tick, getPollInterval());
+    };
+    tick();
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
   }, [fetchLists]);
 
   useEffect(() => {
-    fetchTasks();
-    const id = setInterval(fetchTasks, POLL_MS);
-    return () => clearInterval(id);
+    let timeoutId;
+    let cancelled = false;
+    const tick = async () => {
+      await fetchTasks();
+      if (cancelled) return;
+      timeoutId = setTimeout(tick, getPollInterval());
+    };
+    tick();
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
   }, [fetchTasks]);
 
   // Reset task cursor when list changes
