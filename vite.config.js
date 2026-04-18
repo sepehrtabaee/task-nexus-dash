@@ -5,15 +5,28 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const API_TARGET = env.VITE_API_TARGET || 'http://localhost:3000';
 
+  const allowedHosts = (env.VITE_ALLOWED_HOSTS || '')
+    .split(',')
+    .map((h) => h.trim())
+    .filter(Boolean);
+  const proxy = {
+    '/api': { target: API_TARGET, changeOrigin: true },
+    '/health': { target: API_TARGET, changeOrigin: true },
+  };
+
   return {
     plugins: [react()],
     server: {
       host: '0.0.0.0',
       port: 5173,
-      proxy: {
-        '/api': { target: API_TARGET, changeOrigin: true },
-        '/health': { target: API_TARGET, changeOrigin: true },
-      },
+      allowedHosts,
+      proxy,
+    },
+    preview: {
+      host: '0.0.0.0',
+      port: 4173,
+      allowedHosts,
+      proxy,
     },
   };
 });
