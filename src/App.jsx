@@ -229,12 +229,12 @@ function ConfirmModal({ message, onConfirm, onClose }) {
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
-const POLL_MS = 5000;
+const POLL_MS = 15000;
 
 function Dashboard({ user, onLogout }) {
   const [lists, setLists] = useState([]);
   const [tasks, setTasks] = useState([]);
-  const [taskCounts, setTaskCounts] = useState({}); // { [listId]: incompleteCount }
+  const [taskCounts, setTaskCounts] = useState({}); // { [listId]: taskCount }
   const [taskFontSize, setTaskFontSize] = useState(14); // px
   const [listIdx, setListIdx] = useState(0);
   const [taskIdx, setTaskIdx] = useState(0);
@@ -260,25 +260,20 @@ function Dashboard({ user, onLogout }) {
   const fetchLists = useCallback(async () => {
     try {
       const data = await api.getListsByUserId(user.id);
-      setLists(data ?? []);
+      const listsData = data ?? [];
+      setLists(listsData);
       setLastUpdated(new Date());
       setApiError(null);
-      // Fetch incomplete task counts for all lists in the background
-      if (data?.length) {
-        Promise.all(data.map((list) => api.getTasksByListId(list.id, concise).catch(() => [])))
-          .then((results) => {
-            const counts = {};
-            data.forEach((list, i) => {
-              counts[list.id] = (results[i] ?? []).filter((t) => !t.is_completed).length;
-            });
-            setTaskCounts(counts);
-          })
-          .catch(() => { });
-      }
+      const counts = {};
+      listsData.forEach((list) => {
+        console.log('List', list);
+        counts[list.id] = list.pending_task_count ?? 0;
+      });
+      setTaskCounts(counts);
     } catch (err) {
       setApiError(err.message);
     }
-  }, [user.id, concise]);
+  }, [user.id]);
 
   const fetchTasks = useCallback(async () => {
     if (!selectedList) {
@@ -289,10 +284,6 @@ function Dashboard({ user, onLogout }) {
       const data = await api.getTasksByListId(selectedList.id, concise);
       const sorted = [...(data ?? [])].sort((a, b) => a.is_completed - b.is_completed);
       setTasks(sorted);
-      setTaskCounts((prev) => ({
-        ...prev,
-        [selectedList.id]: (data ?? []).filter((t) => !t.is_completed).length,
-      }));
     } catch (err) {
       console.error('Tasks fetch failed:', err.message);
     }

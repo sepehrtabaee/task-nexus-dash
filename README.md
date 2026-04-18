@@ -32,11 +32,11 @@ This repo is the always-on kiosk frontend for the TaskNexus system. It was built
 
 The dashboard is built to run unattended 24/7 on a small screen with no keyboard or mouse input from a regular user.
 
-The layout fills the viewport exactly with `overflow: hidden` on `html`, `body`, and `#root` — nothing can scroll out of frame. The color palette is high contrast dark so it's readable at arm's length. Lists and tasks poll the API every 5 seconds with a live timestamp in the header. A concise mode (`C` key) filters the task list to only incomplete tasks and those completed today, and the entire UI is keyboard-navigable for use with a remote or keypad.
+The layout fills the viewport exactly with `overflow: hidden` on `html`, `body`, and `#root` — nothing can scroll out of frame. The color palette is high contrast dark so it's readable at arm's length. Lists and tasks poll the API every 15 seconds with a live timestamp in the header. A concise mode (`C` key) filters the task list to only incomplete tasks and those completed today, and the entire UI is keyboard-navigable for use with a remote or keypad.
 
 ### Why polling instead of WebSockets
 
-Tasks change when someone messages the Telegram bot — not in milliseconds. A 5-second lag is invisible on a wall display, so the complexity of WebSockets isn't justified here. Plain `GET` requests are easier to debug, recover automatically from network blips without any reconnection logic, and add zero standing overhead on constrained Pi hardware.
+Tasks change when someone messages the Telegram bot — not in milliseconds. A 15-second lag is invisible on a wall display, so the complexity of WebSockets isn't justified here. Plain `GET` requests are easier to debug, recover automatically from network blips without any reconnection logic, and add zero standing overhead on constrained Pi hardware.
 
 ### Keyboard shortcuts
 
