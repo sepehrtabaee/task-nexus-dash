@@ -237,6 +237,10 @@ function getPollInterval(now = new Date()) {
   return hour >= 2 && hour < 6 ? NIGHT_POLL_MS : POLL_MS;
 }
 
+function isMobileViewport() {
+  return typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
+}
+
 function Dashboard({ user, onLogout }) {
   const [lists, setLists] = useState([]);
   const [tasks, setTasks] = useState([]);
@@ -477,18 +481,25 @@ function Dashboard({ user, onLogout }) {
       </header>
 
       {/* Two-panel layout */}
-      <div className="panels">
+      <div className="panels" data-active-panel={panel}>
         {/* Lists panel */}
         <div className={`panel panel-lists ${panel === 'lists' ? 'is-active' : ''}`}>
           <div className="panel-head">
             <span>Lists</span>
             <span className="panel-count">{lists.length}</span>
+            <button
+              className="mobile-action"
+              onClick={() => setShowNewList(true)}
+              aria-label="New list"
+            >
+              + New
+            </button>
           </div>
           <div className="panel-body">
             {lists.length === 0 ? (
               <div className="empty">
                 <span>No lists yet</span>
-                <span className="empty-hint">Press N to create one</span>
+                <span className="empty-hint">Tap + New to create one</span>
               </div>
             ) : (
               lists.map((list, idx) => (
@@ -498,7 +509,7 @@ function Dashboard({ user, onLogout }) {
                   className={`row row-list ${idx === listIdx ? 'is-selected' : ''}`}
                   onClick={() => {
                     setListIdx(idx);
-                    setPanel('lists');
+                    setPanel(isMobileViewport() ? 'tasks' : 'lists');
                   }}
                   onDoubleClick={() => {
                     setListIdx(idx);
@@ -522,9 +533,25 @@ function Dashboard({ user, onLogout }) {
         {/* Tasks panel */}
         <div className={`panel panel-tasks ${panel === 'tasks' ? 'is-active' : ''}`} style={{ '--task-fs': `${taskFontSize}px` }}>
           <div className="panel-head">
-            <span>{selectedList ? selectedList.name : 'Select a list'}</span>
+            <button
+              className="mobile-back"
+              onClick={() => setPanel('lists')}
+              aria-label="Back to lists"
+            >
+              ← Lists
+            </button>
+            <span className="panel-head-title">{selectedList ? selectedList.name : 'Select a list'}</span>
             {tasks.length > 0 && (
               <span className="panel-count">{completedCount}/{tasks.length}</span>
+            )}
+            {selectedList && (
+              <button
+                className="mobile-action"
+                onClick={() => setShowNewTask(true)}
+                aria-label="New task"
+              >
+                + New
+              </button>
             )}
           </div>
           <div className="panel-body">
