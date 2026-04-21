@@ -1,5 +1,19 @@
+import { supabase } from './supabase';
+
+const BASE = import.meta.env.VITE_API_TARGET;
+
 async function request(path, options = {}) {
-  const res = await fetch(path, options);
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+
+  const res = await fetch(`${BASE}${path}`, {
+    ...options,
+    headers: {
+      ...options.headers,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`${res.status}: ${text || res.statusText}`);
@@ -7,25 +21,7 @@ async function request(path, options = {}) {
   return res.json();
 }
 
-// Try UUID lookup first, then fall back to telegram_id search
-export async function findUser(input) {
-  // Try direct UUID lookup
-  try {
-    const user = await request(`/api/users/${input}`);
-    if (user && user.id) return user;
-  } catch {
-    // Not a UUID or not found, try telegram_id
-  }
-
-  // Try matching telegram_id from all users
-  const users = await request('/api/users');
-  const found = users.find(
-    (u) =>
-      String(u.telegram_id) === String(input) ||
-      u.id === input
-  );
-  return found || null;
-}
+export const getUser = (userId) => request(`/api/users/${userId}`);
 
 export const getListsByUserId = (userId) =>
   request(`/api/lists/user/${userId}`);

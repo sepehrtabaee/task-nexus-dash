@@ -6,10 +6,6 @@
       "handle": "filesystem"
     },
     {
-      "src": "/health",
-      "dest": "https://taks-manager-phi.vercel.app/health"
-    },
-    {
       "src": "/(.*)",
       "dest": "/index.html"
     }

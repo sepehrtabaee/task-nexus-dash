@@ -1,31 +1,31 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import * as api from './api';
+import { supabase } from './supabase';
 
-// ─── Setup Screen ───────────────────────────────────────────────────────────
+// ─── Login Screen ────────────────────────────────────────────────────────────
 
-function SetupScreen({ onSetup }) {
-  const [input, setInput] = useState('');
+function LoginScreen() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const inputRef = useRef(null);
+  const emailRef = useRef(null);
 
   useEffect(() => {
-    inputRef.current?.focus();
+    emailRef.current?.focus();
   }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const val = input.trim();
-    if (!val) return;
+    if (!email.trim() || !password) return;
     setLoading(true);
     setError('');
     try {
-      const user = await api.findUser(val);
-      if (user) {
-        onSetup(user);
-      } else {
-        setError('User not found. Check your ID and try again.');
-      }
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      if (authError) throw authError;
     } catch (err) {
       setError(err.message);
     } finally {
@@ -38,20 +38,28 @@ function SetupScreen({ onSetup }) {
       <div className="setup-card">
         <div className="setup-logo">✓</div>
         <h1>Task Manager</h1>
-        <p>Enter your User ID or Telegram ID</p>
+        <p>Sign in to your account</p>
         <form onSubmit={handleSubmit}>
           <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="User ID or Telegram ID"
+            ref={emailRef}
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email"
             disabled={loading}
-            autoComplete="off"
+            autoComplete="email"
+          />
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+            disabled={loading}
+            autoComplete="current-password"
           />
           {error && <div className="error">{error}</div>}
-          <button type="submit" disabled={loading || !input.trim()}>
-            {loading ? 'Searching...' : 'Continue →'}
+          <button type="submit" disabled={loading || !email.trim() || !password}>
+            {loading ? 'Signing in...' : 'Sign in →'}
           </button>
         </form>
       </div>
@@ -887,28 +895,47 @@ function Dashboard({ user, onLogout }) {
 // ─── App Root ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [user, setUser] = useState(() => {
-    try {
-      const saved = localStorage.getItem('tm_user');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [user, setUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
 
-  const handleSetup = (u) => {
-    localStorage.setItem('tm_user', JSON.stringify(u));
-    setUser(u);
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session) {
+        try {
+          const profile = await api.getUser(session.user.id);
+          setUser(profile);
+        } catch {
+          setUser(null);
+        }
+      }
+      setAuthReady(true);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session) {
+        try {
+          const profile = await api.getUser(session.user.id);
+          setUser(profile);
+        } catch {
+          setUser(null);
+        }
+      } else {
+        setUser(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('tm_user');
-    setUser(null);
-  };
+  if (!authReady) return null;
 
   return user ? (
     <Dashboard user={user} onLogout={handleLogout} />
   ) : (
-    <SetupScreen onSetup={handleSetup} />
+    <LoginScreen />
   );
 }
