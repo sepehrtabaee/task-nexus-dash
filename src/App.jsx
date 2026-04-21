@@ -208,6 +208,167 @@ function NewTaskModal({ onClose, onCreated, listId, listName }) {
   );
 }
 
+// ─── Edit List Modal ──────────────────────────────────────────────────────────
+
+function EditListModal({ onClose, onSaved, list }) {
+  const [name, setName] = useState(list.name ?? '');
+  const [loading, setLoading] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    setTimeout(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }, 50);
+  }, []);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === list.name) {
+      onClose();
+      return;
+    }
+    setLoading(true);
+    try {
+      const updated = await api.updateList(list.id, { name: trimmed });
+      onSaved(updated);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal title="Edit List" onClose={onClose}>
+      <form onSubmit={handleSubmit}>
+        <input
+          ref={inputRef}
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="List name"
+          disabled={loading}
+        />
+        <div className="modal-buttons">
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            Cancel [Esc]
+          </button>
+          <button type="submit" className="btn-primary" disabled={loading || !name.trim()}>
+            Save [Enter]
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// ─── Edit Task Modal ──────────────────────────────────────────────────────────
+
+function isoToLocalInput(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function EditTaskModal({ onClose, onSaved, task, listName }) {
+  const [form, setForm] = useState({
+    title: task.title ?? '',
+    description: task.description ?? '',
+    due_date: isoToLocalInput(task.due_date),
+    priority: task.priority ?? 1,
+    is_completed: !!task.is_completed,
+  });
+  const [loading, setLoading] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    setTimeout(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }, 50);
+  }, []);
+
+  const set = (key) => (e) => {
+    const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+    setForm((f) => ({ ...f, [key]: value }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.title.trim()) return;
+    setLoading(true);
+    try {
+      const data = {
+        title: form.title.trim(),
+        description: form.description.trim(),
+        priority: Number(form.priority),
+        is_completed: form.is_completed,
+        due_date: form.due_date ? new Date(form.due_date).toISOString() : null,
+      };
+      const updated = await api.updateTask(task.id, data);
+      onSaved(updated);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal title={`Edit Task${listName ? ` — ${listName}` : ''}`} onClose={onClose}>
+      <form onSubmit={handleSubmit}>
+        <input
+          ref={inputRef}
+          type="text"
+          value={form.title}
+          onChange={set('title')}
+          placeholder="Title *"
+          disabled={loading}
+        />
+        <input
+          type="text"
+          value={form.description}
+          onChange={set('description')}
+          placeholder="Description"
+          disabled={loading}
+        />
+        <input
+          type="datetime-local"
+          value={form.due_date}
+          onChange={set('due_date')}
+          disabled={loading}
+        />
+        <select value={form.priority} onChange={set('priority')} disabled={loading}>
+          <option value={1}>Normal priority</option>
+          <option value={2}>High priority (!)</option>
+          <option value={3}>Urgent priority (!!!)</option>
+        </select>
+        <label className="modal-checkbox">
+          <input
+            type="checkbox"
+            checked={form.is_completed}
+            onChange={set('is_completed')}
+            disabled={loading}
+          />
+          <span>Completed</span>
+        </label>
+        <div className="modal-buttons">
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            Cancel [Esc]
+          </button>
+          <button type="submit" className="btn-primary" disabled={loading || !form.title.trim()}>
+            Save [Enter]
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 // ─── Confirm Modal ────────────────────────────────────────────────────────────
 
 function ConfirmModal({ message, onConfirm, onClose }) {
@@ -256,12 +417,14 @@ function Dashboard({ user, onLogout }) {
   // Modals
   const [showNewList, setShowNewList] = useState(false);
   const [showNewTask, setShowNewTask] = useState(false);
+  const [editList, setEditList] = useState(null); // list object being edited
+  const [editTask, setEditTask] = useState(null); // task object being edited
   const [confirmDelete, setConfirmDelete] = useState(null); // { type, id, name }
 
   const selectedListRowRef = useRef(null);
   const selectedTaskRowRef = useRef(null);
 
-  const modalOpen = showNewList || showNewTask || !!confirmDelete;
+  const modalOpen = showNewList || showNewTask || !!editList || !!editTask || !!confirmDelete;
 
   const selectedList = lists[listIdx] ?? null;
 
@@ -409,6 +572,16 @@ function Dashboard({ user, onLogout }) {
         return;
       }
 
+      // E: edit selected item
+      if (key === 'e' || key === 'E') {
+        if (panel === 'lists' && selectedList) {
+          setEditList(selectedList);
+        } else if (panel === 'tasks' && tasks[taskIdx]) {
+          setEditTask(tasks[taskIdx]);
+        }
+        return;
+      }
+
       // D / Delete: delete item
       if (key === 'd' || key === 'D' || key === 'Delete') {
         if (panel === 'lists' && selectedList) {
@@ -521,12 +694,24 @@ function Dashboard({ user, onLogout }) {
                   {taskCounts[list.id] > 0 && (
                     <span className="list-task-count">{taskCounts[list.id]}</span>
                   )}
+                  <button
+                    className="row-edit"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setListIdx(idx);
+                      setEditList(list);
+                    }}
+                    aria-label="Edit list"
+                    title="Edit list"
+                  >
+                    ✎
+                  </button>
                 </div>
               ))
             )}
           </div>
           <div className="panel-foot">
-            <kbd>N</kbd> New &nbsp; <kbd>D</kbd> Delete
+            <kbd>N</kbd> New &nbsp; <kbd>E</kbd> Edit &nbsp; <kbd>D</kbd> Delete
           </div>
         </div>
 
@@ -607,13 +792,25 @@ function Dashboard({ user, onLogout }) {
                         {'!'.repeat(task.priority)}
                       </span>
                     )}
+                    <button
+                      className="row-edit"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setTaskIdx(idx);
+                        setEditTask(task);
+                      }}
+                      aria-label="Edit task"
+                      title="Edit task"
+                    >
+                      ✎
+                    </button>
                   </div>
                 );
               })
             )}
           </div>
           <div className="panel-foot">
-            <kbd>N</kbd> New &nbsp; <kbd>D</kbd> Delete &nbsp; <kbd>Enter</kbd> Toggle done &nbsp; <kbd>+</kbd><kbd>-</kbd> Font size
+            <kbd>N</kbd> New &nbsp; <kbd>E</kbd> Edit &nbsp; <kbd>D</kbd> Delete &nbsp; <kbd>Enter</kbd> Toggle done &nbsp; <kbd>+</kbd><kbd>-</kbd> Font size
           </div>
         </div>
       </div>
@@ -624,6 +821,7 @@ function Dashboard({ user, onLogout }) {
         <span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>
         <span><kbd>Enter</kbd> Select / Toggle</span>
         <span><kbd>N</kbd> New</span>
+        <span><kbd>E</kbd> Edit</span>
         <span><kbd>D</kbd> Delete</span>
         <span><kbd>C</kbd> Toggle concise</span>
       </footer>
@@ -648,6 +846,29 @@ function Dashboard({ user, onLogout }) {
           onClose={() => setShowNewTask(false)}
           onCreated={async () => {
             setShowNewTask(false);
+            await fetchTasks();
+          }}
+        />
+      )}
+
+      {editList && (
+        <EditListModal
+          list={editList}
+          onClose={() => setEditList(null)}
+          onSaved={async () => {
+            setEditList(null);
+            await fetchLists();
+          }}
+        />
+      )}
+
+      {editTask && (
+        <EditTaskModal
+          task={editTask}
+          listName={selectedList?.name}
+          onClose={() => setEditTask(null)}
+          onSaved={async () => {
+            setEditTask(null);
             await fetchTasks();
           }}
         />
