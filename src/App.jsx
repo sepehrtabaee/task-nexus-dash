@@ -439,7 +439,6 @@ function Dashboard({ user, onLogout }) {
       setApiError(null);
       const counts = {};
       listsData.forEach((list) => {
-        console.log('List', list);
         counts[list.id] = list.pending_task_count ?? 0;
       });
       setTaskCounts(counts);
