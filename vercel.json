@@ -3,6 +3,6 @@
   "outputDirectory": "dist",
   "rewrites": [
     { "source": "/health", "destination": "https://taks-manager-phi.vercel.app/health" },
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
