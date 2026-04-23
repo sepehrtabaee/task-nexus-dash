@@ -26,8 +26,8 @@ export const getUser = (userId) => request(`/api/users/${userId}`);
 export const getListsByUserId = (userId) =>
   request(`/api/lists/user/${userId}`);
 
-export const getTasksByListId = (listId, concise = false) =>
-  request(`/api/tasks/list/${listId}${concise ? '?concise=true' : ''}`);
+export const getTasksByListId = (listId, concise = false, signal) =>
+  request(`/api/tasks/list/${listId}${concise ? '?concise=true' : ''}`, { signal });
 
 export const createList = (data) =>
   request('/api/lists', {

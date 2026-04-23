@@ -431,6 +431,7 @@ function Dashboard({ user, onLogout }) {
 
   const selectedListRowRef = useRef(null);
   const selectedTaskRowRef = useRef(null);
+  const taskAbortRef = useRef(null);
 
   const modalOpen = showNewList || showNewTask || !!editList || !!editTask || !!confirmDelete;
 
@@ -456,15 +457,21 @@ function Dashboard({ user, onLogout }) {
   }, [user.id]);
 
   const fetchTasks = useCallback(async () => {
+    taskAbortRef.current?.abort();
+    const controller = new AbortController();
+    taskAbortRef.current = controller;
+
     if (!selectedList) {
       setTasks([]);
       return;
     }
     try {
-      const data = await api.getTasksByListId(selectedList.id, concise);
+      const data = await api.getTasksByListId(selectedList.id, concise, controller.signal);
+      if (controller.signal.aborted) return;
       const sorted = [...(data ?? [])].sort((a, b) => a.is_completed - b.is_completed);
       setTasks(sorted);
     } catch (err) {
+      if (err.name === 'AbortError') return;
       console.error('Tasks fetch failed:', err.message);
     }
   }, [selectedList?.id, concise]); // eslint-disable-line react-hooks/exhaustive-deps
