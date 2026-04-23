@@ -916,6 +916,8 @@ export default function App() {
         }
       }
       setAuthReady(true);
+    }).catch(() => {
+      setAuthReady(true);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
