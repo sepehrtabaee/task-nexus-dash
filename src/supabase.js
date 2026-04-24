@@ -6,7 +6,16 @@ export const supabase = createClient(
   {
     auth: {
       lock: typeof navigator !== 'undefined' && navigator.locks
-        ? (name, _timeout, fn) => navigator.locks.request(name, fn)
+        ? async (name, acquireTimeout, fn) => {
+            if (!acquireTimeout || acquireTimeout < 0) {
+              return navigator.locks.request(name, fn);
+            }
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), acquireTimeout);
+            return navigator.locks
+              .request(name, { signal: controller.signal }, fn)
+              .finally(() => clearTimeout(timer));
+          }
         : undefined,
     },
   }

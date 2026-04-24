@@ -906,7 +906,13 @@ export default function App() {
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
+    const authTimeout = setTimeout(async () => {
+      await supabase.auth.signOut({ scope: 'local' });
+      setAuthReady(true);
+    }, 8000);
+
     supabase.auth.getSession().then(async ({ data: { session } }) => {
+      clearTimeout(authTimeout);
       if (session) {
         try {
           const profile = await api.getUser(session.user.id);
@@ -917,6 +923,7 @@ export default function App() {
       }
       setAuthReady(true);
     }).catch(() => {
+      clearTimeout(authTimeout);
       setAuthReady(true);
     });
 
