@@ -906,8 +906,12 @@ export default function App() {
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
-    const authTimeout = setTimeout(async () => {
-      await supabase.auth.signOut({ scope: 'local' });
+    const authTimeout = setTimeout(() => {
+      try {
+        Object.keys(localStorage).forEach((key) => {
+          if (key.startsWith('sb-')) localStorage.removeItem(key);
+        });
+      } catch {}
       setAuthReady(true);
     }, 8000);
 
