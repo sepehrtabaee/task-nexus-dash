@@ -2,15 +2,22 @@ import { supabase } from './supabase';
 
 const BASE = import.meta.env.VITE_API_TARGET;
 
-async function request(path, options = {}) {
-  const { data: { session } } = await supabase.auth.getSession();
-  const token = session?.access_token;
+// Cache the access token so requests don't compete for the Supabase auth lock.
+// Updated synchronously via onAuthStateChange (TOKEN_REFRESHED, SIGNED_IN, …).
+let cachedToken = null;
+supabase.auth.getSession().then(({ data }) => {
+  cachedToken = data?.session?.access_token ?? null;
+});
+supabase.auth.onAuthStateChange((_event, session) => {
+  cachedToken = session?.access_token ?? null;
+});
 
+async function request(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
     ...options,
     headers: {
       ...options.headers,
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(cachedToken ? { Authorization: `Bearer ${cachedToken}` } : {}),
     },
   });
 

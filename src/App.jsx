@@ -902,60 +902,71 @@ function Dashboard({ user, onLogout }) {
 // ─── App Root ─────────────────────────────────────────────────────────────────
 
 export default function App() {
+  // undefined = checking storage, null = signed out, Session object = signed in
+  const [session, setSession] = useState(undefined);
   const [user, setUser] = useState(null);
-  const [authReady, setAuthReady] = useState(false);
 
+  // Subscribe to auth state. Keep this callback synchronous — awaiting inside
+  // it holds Supabase's auth lock and deadlocks subsequent calls.
   useEffect(() => {
-    const authTimeout = setTimeout(() => {
-      try {
-        Object.keys(localStorage).forEach((key) => {
-          if (key.startsWith('sb-')) localStorage.removeItem(key);
-        });
-      } catch {}
-      setAuthReady(true);
-    }, 8000);
+    let mounted = true;
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      clearTimeout(authTimeout);
-      if (session) {
-        try {
-          const profile = await api.getUser(session.user.id);
-          setUser(profile);
-        } catch {
-          setUser(null);
-        }
-      }
-      setAuthReady(true);
-    }).catch(() => {
-      clearTimeout(authTimeout);
-      setAuthReady(true);
+    supabase.auth.getSession()
+      .then(({ data }) => { if (mounted) setSession(data?.session ?? null); })
+      .catch(() => { if (mounted) setSession(null); });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      if (mounted) setSession(newSession);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session) {
-        try {
-          const profile = await api.getUser(session.user.id);
-          setUser(profile);
-        } catch {
-          setUser(null);
-        }
-      } else {
-        setUser(null);
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
+
+  // Load profile in a separate effect so it never blocks the auth lock.
+  // A failed profile fetch must NOT sign the user out — the Supabase session
+  // is still valid; we just fall back to a session-derived minimal user.
+  useEffect(() => {
+    if (!session) {
+      setUser(null);
+      return;
+    }
+    if (user?.id === session.user.id) return;
+
+    let cancelled = false;
+    api.getUser(session.user.id)
+      .then((profile) => { if (!cancelled) setUser(profile); })
+      .catch(() => {
+        if (cancelled) return;
+        setUser({
+          id: session.user.id,
+          email: session.user.email,
+          username: session.user.email,
+        });
+      });
+    return () => { cancelled = true; };
+  }, [session?.user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
   };
 
-  if (!authReady) return null;
-
-  return user ? (
-    <Dashboard user={user} onLogout={handleLogout} />
-  ) : (
-    <LoginScreen />
-  );
+  if (session === undefined) {
+    return (
+      <div className="setup-screen">
+        <div className="setup-card"><p>Loading…</p></div>
+      </div>
+    );
+  }
+  if (!session) return <LoginScreen />;
+  if (!user) {
+    return (
+      <div className="setup-screen">
+        <div className="setup-card"><p>Loading profile…</p></div>
+      </div>
+    );
+  }
+  return <Dashboard user={user} onLogout={handleLogout} />;
 }
