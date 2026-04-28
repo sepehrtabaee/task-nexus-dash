@@ -396,15 +396,96 @@ function ConfirmModal({ message, onConfirm, onClose }) {
   );
 }
 
-// ─── Dashboard ────────────────────────────────────────────────────────────────
+// ─── Smart polling ────────────────────────────────────────────────────────────
+//
+// Polling rate adapts to user presence so we don't burn API calls on an
+// untouched tab.
+//   • active (activity within 30s, tab visible) → poll every 15s
+//   • idle   (30s–5min, tab visible)            → poll every 60s
+//   • away   (>5min idle OR tab hidden)         → pause polling
+// Tab-focus, visibility-return, and activity-after-away each trigger an
+// immediate refetch so the UI catches up the moment the user comes back.
 
-const POLL_MS = 15000;
-const NIGHT_POLL_MS = 60000;
+const ACTIVE_POLL_MS = 15000;
+const IDLE_POLL_MS = 60000;
+const IDLE_AFTER_MS = 30000;
+const AWAY_AFTER_MS = 5 * 60 * 1000;
 
-function getPollInterval(now = new Date()) {
-  const hour = now.getHours();
-  return hour >= 2 && hour < 6 ? NIGHT_POLL_MS : POLL_MS;
+const ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'wheel'];
+
+function useLastActivity() {
+  const ref = useRef(Date.now());
+  // Bump whenever the user shows signs of life. Listeners are passive and
+  // module-global (one set per mount of the dashboard) so the cost is trivial.
+  useEffect(() => {
+    const mark = () => { ref.current = Date.now(); };
+    ACTIVITY_EVENTS.forEach((e) => window.addEventListener(e, mark, { passive: true }));
+    return () => ACTIVITY_EVENTS.forEach((e) => window.removeEventListener(e, mark));
+  }, []);
+  return ref;
 }
+
+function useSmartPoll(fetcher, activityRef) {
+  useEffect(() => {
+    let timeoutId;
+    let cancelled = false;
+    let lastFetchActivity = 0;
+
+    const tick = async () => {
+      if (cancelled) return;
+      const idleFor = Date.now() - activityRef.current;
+      const hidden = typeof document !== 'undefined' && document.hidden;
+      const away = hidden || idleFor > AWAY_AFTER_MS;
+
+      if (!away) {
+        try { await fetcher(); } catch { /* fetcher handles its own errors */ }
+        lastFetchActivity = activityRef.current;
+      }
+      if (cancelled) return;
+
+      const nextDelay = idleFor > IDLE_AFTER_MS || away ? IDLE_POLL_MS : ACTIVE_POLL_MS;
+      timeoutId = setTimeout(tick, nextDelay);
+    };
+
+    // Refetch immediately when the tab regains focus or the user resumes
+    // activity after a long pause.
+    const wake = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      clearTimeout(timeoutId);
+      tick();
+    };
+
+    const onActivity = () => {
+      // Only force a wake if we'd been skipping fetches; otherwise the
+      // already-scheduled tick is good enough.
+      if (Date.now() - lastFetchActivity > AWAY_AFTER_MS) wake();
+    };
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', wake);
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', wake);
+      ACTIVITY_EVENTS.forEach((e) => window.addEventListener(e, onActivity, { passive: true }));
+    }
+
+    tick();
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', wake);
+      }
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', wake);
+        ACTIVITY_EVENTS.forEach((e) => window.removeEventListener(e, onActivity));
+      }
+    };
+  }, [fetcher, activityRef]);
+}
+
+// ─── Dashboard ────────────────────────────────────────────────────────────────
 
 function isMobileViewport() {
   return typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
@@ -476,36 +557,10 @@ function Dashboard({ user, onLogout }) {
     }
   }, [selectedList?.id, concise]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Initial load + polling
-  useEffect(() => {
-    let timeoutId;
-    let cancelled = false;
-    const tick = async () => {
-      await fetchLists();
-      if (cancelled) return;
-      timeoutId = setTimeout(tick, getPollInterval());
-    };
-    tick();
-    return () => {
-      cancelled = true;
-      clearTimeout(timeoutId);
-    };
-  }, [fetchLists]);
-
-  useEffect(() => {
-    let timeoutId;
-    let cancelled = false;
-    const tick = async () => {
-      await fetchTasks();
-      if (cancelled) return;
-      timeoutId = setTimeout(tick, getPollInterval());
-    };
-    tick();
-    return () => {
-      cancelled = true;
-      clearTimeout(timeoutId);
-    };
-  }, [fetchTasks]);
+  // Activity-aware polling — see useSmartPoll for rate logic.
+  const activityRef = useLastActivity();
+  useSmartPoll(fetchLists, activityRef);
+  useSmartPoll(fetchTasks, activityRef);
 
   // Reset task cursor when list changes
   useEffect(() => {
