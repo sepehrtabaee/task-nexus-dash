@@ -175,7 +175,8 @@ body {
   gap: 0.75rem;
 }
 
-.last-updated {
+.last-updated,
+.last-activity {
   color: var(--text-dim);
   font-size: 0.75rem;
   white-space: nowrap;
@@ -697,6 +698,7 @@ kbd {
     flex-wrap: wrap;
   }
   .last-updated,
+  .last-activity,
   .concise-badge {
     display: none;
   }

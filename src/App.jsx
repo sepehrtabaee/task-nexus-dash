@@ -415,14 +415,25 @@ const ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scr
 
 function useLastActivity() {
   const ref = useRef(Date.now());
+  const [activityTime, setActivityTime] = useState(() => new Date());
   // Bump whenever the user shows signs of life. Listeners are passive and
   // module-global (one set per mount of the dashboard) so the cost is trivial.
+  // The ref updates on every event (cheap); the state is throttled to 1Hz so
+  // we don't re-render on every mousemove.
   useEffect(() => {
-    const mark = () => { ref.current = Date.now(); };
+    let lastStateUpdate = 0;
+    const mark = () => {
+      const now = Date.now();
+      ref.current = now;
+      if (now - lastStateUpdate >= 1000) {
+        lastStateUpdate = now;
+        setActivityTime(new Date(now));
+      }
+    };
     ACTIVITY_EVENTS.forEach((e) => window.addEventListener(e, mark, { passive: true }));
     return () => ACTIVITY_EVENTS.forEach((e) => window.removeEventListener(e, mark));
   }, []);
-  return ref;
+  return { ref, activityTime };
 }
 
 function useSmartPoll(fetcher, activityRef) {
@@ -558,7 +569,7 @@ function Dashboard({ user, onLogout }) {
   }, [selectedList?.id, concise]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Activity-aware polling — see useSmartPoll for rate logic.
-  const activityRef = useLastActivity();
+  const { ref: activityRef, activityTime } = useLastActivity();
   useSmartPoll(fetchLists, activityRef);
   useSmartPoll(fetchTasks, activityRef);
 
@@ -700,7 +711,9 @@ function Dashboard({ user, onLogout }) {
 
   const completedCount = tasks.filter((t) => t.is_completed).length;
   const displayName = user.username || user.first_name || user.telegram_id || user.id;
-  const timeStr = lastUpdated?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const timeFmt = { hour: '2-digit', minute: '2-digit', second: '2-digit' };
+  const timeStr = lastUpdated?.toLocaleTimeString([], timeFmt);
+  const activityStr = activityTime?.toLocaleTimeString([], timeFmt);
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -714,7 +727,8 @@ function Dashboard({ user, onLogout }) {
         </div>
         <div className="header-right">
           {apiError && <span className="api-error">⚠ {apiError}</span>}
-          {timeStr && !apiError && <span className="last-updated">↺ {timeStr}</span>}
+          {activityStr && <span className="last-activity" title="Last user activity">● {activityStr}</span>}
+          {timeStr && !apiError && <span className="last-updated" title="Last data refresh">↺ {timeStr}</span>}
           <span className={`concise-badge ${concise ? 'is-on' : 'is-off'}`}>
             {concise ? 'Concise ON' : 'Concise OFF'}
           </span>
