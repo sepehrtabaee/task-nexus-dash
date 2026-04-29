@@ -396,35 +396,16 @@ function ConfirmModal({ message, onConfirm, onClose }) {
   );
 }
 
-// ─── Smart polling ────────────────────────────────────────────────────────────
-//
-// Polling rate adapts to user presence so we don't burn API calls on an
-// untouched tab.
-//   • active (activity within 30s, tab visible) → poll every 15s
-//   • idle   (30s–5min, tab visible)            → poll every 60s
-//   • away   (>5min idle OR tab hidden)         → pause polling
-// Tab-focus, visibility-return, and activity-after-away each trigger an
-// immediate refetch so the UI catches up the moment the user comes back.
-
-const ACTIVE_POLL_MS = 15000;
-const IDLE_POLL_MS = 60000;
-const IDLE_AFTER_MS = 30000;
-const AWAY_AFTER_MS = 5 * 60 * 1000;
+// ─── Activity tracking ────────────────────────────────────────────────────────
 
 const ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'wheel'];
 
 function useLastActivity() {
-  const ref = useRef(Date.now());
   const [activityTime, setActivityTime] = useState(() => new Date());
-  // Bump whenever the user shows signs of life. Listeners are passive and
-  // module-global (one set per mount of the dashboard) so the cost is trivial.
-  // The ref updates on every event (cheap); the state is throttled to 1Hz so
-  // we don't re-render on every mousemove.
   useEffect(() => {
     let lastStateUpdate = 0;
     const mark = () => {
       const now = Date.now();
-      ref.current = now;
       if (now - lastStateUpdate >= 1000) {
         lastStateUpdate = now;
         setActivityTime(new Date(now));
@@ -433,67 +414,7 @@ function useLastActivity() {
     ACTIVITY_EVENTS.forEach((e) => window.addEventListener(e, mark, { passive: true }));
     return () => ACTIVITY_EVENTS.forEach((e) => window.removeEventListener(e, mark));
   }, []);
-  return { ref, activityTime };
-}
-
-function useSmartPoll(fetcher, activityRef) {
-  useEffect(() => {
-    let timeoutId;
-    let cancelled = false;
-    let lastFetchActivity = 0;
-
-    const tick = async () => {
-      if (cancelled) return;
-      const idleFor = Date.now() - activityRef.current;
-      const hidden = typeof document !== 'undefined' && document.hidden;
-      const away = hidden || idleFor > AWAY_AFTER_MS;
-
-      if (!away) {
-        try { await fetcher(); } catch { /* fetcher handles its own errors */ }
-        lastFetchActivity = activityRef.current;
-      }
-      if (cancelled) return;
-
-      const nextDelay = idleFor > IDLE_AFTER_MS || away ? IDLE_POLL_MS : ACTIVE_POLL_MS;
-      timeoutId = setTimeout(tick, nextDelay);
-    };
-
-    // Refetch immediately when the tab regains focus or the user resumes
-    // activity after a long pause.
-    const wake = () => {
-      if (typeof document !== 'undefined' && document.hidden) return;
-      clearTimeout(timeoutId);
-      tick();
-    };
-
-    const onActivity = () => {
-      // Only force a wake if we'd been skipping fetches; otherwise the
-      // already-scheduled tick is good enough.
-      if (Date.now() - lastFetchActivity > AWAY_AFTER_MS) wake();
-    };
-
-    if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', wake);
-    }
-    if (typeof window !== 'undefined') {
-      window.addEventListener('focus', wake);
-      ACTIVITY_EVENTS.forEach((e) => window.addEventListener(e, onActivity, { passive: true }));
-    }
-
-    tick();
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timeoutId);
-      if (typeof document !== 'undefined') {
-        document.removeEventListener('visibilitychange', wake);
-      }
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('focus', wake);
-        ACTIVITY_EVENTS.forEach((e) => window.removeEventListener(e, onActivity));
-      }
-    };
-  }, [fetcher, activityRef]);
+  return { activityTime };
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -523,55 +444,193 @@ function Dashboard({ user, onLogout }) {
 
   const selectedListRowRef = useRef(null);
   const selectedTaskRowRef = useRef(null);
-  const taskAbortRef = useRef(null);
+  // Map<taskId, list_id> of every incomplete task in the user's scope.
+  // Used to derive taskCounts incrementally from realtime events without
+  // re-querying the DB on every change.
+  const incompleteTasksRef = useRef(new Map());
 
   const modalOpen = showNewList || showNewTask || !!editList || !!editTask || !!confirmDelete;
 
   const selectedList = lists[listIdx] ?? null;
 
-  // ── Data fetching ──────────────────────────────────────────────────────────
+  // ── Data fetching (Supabase direct + realtime) ─────────────────────────────
+
+  const recomputeTaskCounts = useCallback(() => {
+    const counts = {};
+    incompleteTasksRef.current.forEach((listId) => {
+      counts[listId] = (counts[listId] ?? 0) + 1;
+    });
+    setTaskCounts(counts);
+  }, []);
 
   const fetchLists = useCallback(async () => {
     try {
-      const data = await api.getListsByUserId(user.id);
-      const listsData = data ?? [];
-      setLists(listsData);
+      const [listsRes, tasksRes] = await Promise.all([
+        supabase
+          .from('taskmanager_lists')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: true }),
+        // RLS scopes this to the current user's tasks.
+        supabase
+          .from('taskmanager_tasks')
+          .select('id, list_id')
+          .eq('is_completed', false),
+      ]);
+      if (listsRes.error) throw listsRes.error;
+      if (tasksRes.error) throw tasksRes.error;
+      setLists(listsRes.data ?? []);
+      const m = new Map();
+      (tasksRes.data ?? []).forEach((t) => m.set(t.id, t.list_id));
+      incompleteTasksRef.current = m;
+      recomputeTaskCounts();
       setLastUpdated(new Date());
       setApiError(null);
-      const counts = {};
-      listsData.forEach((list) => {
-        counts[list.id] = list.pending_task_count ?? 0;
-      });
-      setTaskCounts(counts);
     } catch (err) {
       setApiError(err.message);
     }
-  }, [user.id]);
+  }, [user.id, recomputeTaskCounts]);
 
   const fetchTasks = useCallback(async () => {
-    taskAbortRef.current?.abort();
-    const controller = new AbortController();
-    taskAbortRef.current = controller;
-
     if (!selectedList) {
       setTasks([]);
       return;
     }
     try {
-      const data = await api.getTasksByListId(selectedList.id, concise, controller.signal);
-      if (controller.signal.aborted) return;
+      let q = supabase
+        .from('taskmanager_tasks')
+        .select('*')
+        .eq('list_id', selectedList.id);
+      if (concise) {
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        q = q.or(`is_completed.eq.false,created_at.gte.${todayStart.toISOString()}`);
+      }
+      const { data, error } = await q;
+      if (error) throw error;
       const sorted = [...(data ?? [])].sort((a, b) => a.is_completed - b.is_completed);
       setTasks(sorted);
     } catch (err) {
-      if (err.name === 'AbortError') return;
       console.error('Tasks fetch failed:', err.message);
     }
   }, [selectedList?.id, concise]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Activity-aware polling — see useSmartPoll for rate logic.
-  const { ref: activityRef, activityTime } = useLastActivity();
-  useSmartPoll(fetchLists, activityRef);
-  useSmartPoll(fetchTasks, activityRef);
+  const { activityTime } = useLastActivity();
+
+  // Refs read inside the long-lived subscription handler so it can react to
+  // current selectedList / concise without being torn down on each change.
+  const selectedListIdRef = useRef(null);
+  const conciseRef = useRef(concise);
+  useEffect(() => { selectedListIdRef.current = selectedList?.id ?? null; }, [selectedList?.id]);
+  useEffect(() => { conciseRef.current = concise; }, [concise]);
+
+  // Single channel for all dashboard realtime. Two listeners on the same
+  // channel — splitting them across separate channels caused the second
+  // taskmanager_tasks subscription to silently miss events.
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+
+    fetchLists();
+
+    const matchesConciseNow = (task) => {
+      if (!conciseRef.current) return true;
+      if (!task.is_completed) return true;
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      return new Date(task.created_at) >= todayStart;
+    };
+
+    const ch = supabase
+      .channel(`dashboard-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'taskmanager_lists', filter: `user_id=eq.${user.id}` },
+        (payload) => {
+          if (cancelled) return;
+          setLists((prev) => {
+            if (payload.eventType === 'INSERT') {
+              if (prev.some((l) => l.id === payload.new.id)) return prev;
+              return [...prev, payload.new].sort(
+                (a, b) => new Date(a.created_at) - new Date(b.created_at),
+              );
+            }
+            if (payload.eventType === 'UPDATE') {
+              return prev.map((l) => (l.id === payload.new.id ? payload.new : l));
+            }
+            if (payload.eventType === 'DELETE') {
+              return prev.filter((l) => l.id !== payload.old.id);
+            }
+            return prev;
+          });
+          setLastUpdated(new Date());
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'taskmanager_tasks' },
+        (payload) => {
+          if (cancelled) return;
+
+          // 1) Maintain per-list incomplete-task counts.
+          const map = incompleteTasksRef.current;
+          if (payload.eventType === 'INSERT') {
+            if (!payload.new.is_completed) map.set(payload.new.id, payload.new.list_id);
+          } else if (payload.eventType === 'UPDATE') {
+            if (payload.new.is_completed) map.delete(payload.new.id);
+            else map.set(payload.new.id, payload.new.list_id);
+          } else if (payload.eventType === 'DELETE') {
+            // payload.old has only the PK under default REPLICA IDENTITY —
+            // enough, since we key the map by id.
+            map.delete(payload.old.id);
+          }
+          recomputeTaskCounts();
+          setLastUpdated(new Date());
+
+          // 2) Patch the visible tasks list if the event affects the
+          //    currently selected list.
+          const selId = selectedListIdRef.current;
+          if (!selId) return;
+          if (payload.eventType !== 'DELETE' && payload.new.list_id !== selId) return;
+
+          setTasks((prev) => {
+            if (payload.eventType === 'DELETE') {
+              return prev.filter((t) => t.id !== payload.old.id);
+            }
+            if (payload.eventType === 'INSERT') {
+              if (prev.some((t) => t.id === payload.new.id)) return prev;
+              if (!matchesConciseNow(payload.new)) return prev;
+              return [...prev, payload.new].sort((a, b) => a.is_completed - b.is_completed);
+            }
+            if (payload.eventType === 'UPDATE') {
+              const matches = matchesConciseNow(payload.new);
+              const idx = prev.findIndex((t) => t.id === payload.new.id);
+              if (idx === -1) {
+                if (!matches) return prev;
+                return [...prev, payload.new].sort((a, b) => a.is_completed - b.is_completed);
+              }
+              if (!matches) return prev.filter((t) => t.id !== payload.new.id);
+              const next = [...prev];
+              next[idx] = payload.new;
+              return next.sort((a, b) => a.is_completed - b.is_completed);
+            }
+            return prev;
+          });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(ch);
+    };
+  }, [user?.id, fetchLists, recomputeTaskCounts]);
+
+  // Initial fetch when selected list or concise mode changes. The realtime
+  // patches are handled by the unified subscription above.
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks]);
 
   // Reset task cursor when list changes
   useEffect(() => {
