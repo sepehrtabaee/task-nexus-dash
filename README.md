@@ -23,8 +23,9 @@ This repo is the always-on kiosk frontend for the TaskNexus system. It was built
 | UI framework | React 18 |
 | Build tool | Vite |
 | Styling | Plain CSS with CSS custom properties |
-| API comms | `fetch` via a thin wrapper ([src/api.js](src/api.js)) |
-| Dev proxy | Vite's built-in proxy (`/api` → backend) |
+| Auth + reads + realtime | `@supabase/supabase-js` ([src/supabase.js](src/supabase.js)) — email/password sign-in, RLS-scoped queries, WebSocket realtime |
+| Writes | `fetch` via a thin wrapper ([src/api.js](src/api.js)) that hits the backend with the cached Supabase access token |
+| Dev / preview proxy | Vite's built-in proxy (`/api` → backend) |
 
 ---
 
@@ -32,11 +33,13 @@ This repo is the always-on kiosk frontend for the TaskNexus system. It was built
 
 The dashboard is built to run unattended 24/7 on a small screen with no keyboard or mouse input from a regular user.
 
-The layout fills the viewport exactly with `overflow: hidden` on `html`, `body`, and `#root` — nothing can scroll out of frame. The color palette is high contrast dark so it's readable at arm's length. Lists and tasks poll the API every 15 seconds with a live timestamp in the header. A concise mode (`C` key) filters the task list to only incomplete tasks and those completed today, and the entire UI is keyboard-navigable for use with a remote or keypad.
+The layout fills the viewport exactly with `overflow: hidden` on `html`, `body`, and `#root` — nothing can scroll out of frame. The color palette is high contrast dark so it's readable at arm's length. Lists and tasks update in real time via Supabase's `postgres_changes` channel, with a "last data refresh" timestamp in the header so you can confirm the connection is healthy at a glance. A concise mode (`C` key) filters the task list to only incomplete tasks and those completed today, and the entire UI is keyboard-navigable for use with a remote or keypad.
 
-### Why polling instead of WebSockets
+### Why Supabase realtime (and not polling)
 
-Tasks change when someone messages the Telegram bot — not in milliseconds. A 15-second lag is invisible on a wall display, so the complexity of WebSockets isn't justified here. Plain `GET` requests are easier to debug, recover automatically from network blips without any reconnection logic, and add zero standing overhead on constrained Pi hardware.
+The dashboard originally polled the REST backend every 15 seconds. That worked, but tasks created from Telegram took up to 15s to appear — noticeable on a wall display you're standing in front of — and produced constant network chatter even when nothing was happening.
+
+Switching to Supabase realtime (a single WebSocket subscribed to `postgres_changes` on `taskmanager_lists` and `taskmanager_tasks`, scoped by RLS to the signed-in user) gets us instant updates with effectively zero standing overhead, and the reconnect logic is handled by `@supabase/supabase-js`. Per-list incomplete-task counts are maintained incrementally from the event stream rather than re-queried, so a task toggle is one round-trip end-to-end. See [src/App.jsx](src/App.jsx) for the channel setup.
 
 ### Keyboard shortcuts
 
@@ -46,6 +49,7 @@ Tasks change when someone messages the Telegram bot — not in milliseconds. A 1
 | `↑` `↓` | Navigate within the focused panel |
 | `Enter` | Select a list / toggle a task as done |
 | `N` | Create a new list or task |
+| `E` | Edit selected list or task |
 | `D` / `Delete` | Delete selected item (with confirmation) |
 | `C` | Toggle concise view |
 | `+` / `-` | Increase / decrease task font size |
@@ -136,14 +140,6 @@ Raspberry Pi  ←─ scp all files ─── runner
 
 ---
 
-## Potential Improvements
-
-**Telegram-based login verification** — Currently the dashboard logs a user in the moment they type their ID, with no confirmation step. A better flow would be: user enters their ID → the bot sends them a one-time code on Telegram → they enter the code to confirm they actually own that account. This would prevent anyone who knows a user's ID from viewing their tasks.
-
-This wasn't implemented because the dashboard runs on a local network for personal use — there's no real threat model that makes it worth the added complexity. If this were ever hosted publicly, it would be the first thing to add.
-
----
-
 ## Local Development
 
 ```bash
@@ -151,10 +147,12 @@ npm install
 npm run dev
 ```
 
-The Vite dev server starts on `http://localhost:5173` and proxies `/api` requests to the backend. Set the backend target via environment variable:
+The Vite dev server starts on `http://localhost:5173`. Reads, realtime, and auth go directly to Supabase from the browser; writes hit the backend via the Vite `/api` proxy. Configure both via env vars:
 
 ```bash
 # .env
+VITE_SUPABASE_URL=https://<your-project>.supabase.co
+VITE_SUPABASE_ANON_KEY=<your-anon-key>
 VITE_API_TARGET=http://<your-backend-host>:3000
 ```
 
