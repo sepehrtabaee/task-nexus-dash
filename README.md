@@ -24,8 +24,7 @@ This repo is the always-on kiosk frontend for the TaskNexus system. It was built
 | Build tool | Vite |
 | Styling | Plain CSS with CSS custom properties |
 | Auth + reads + realtime | `@supabase/supabase-js` ([src/supabase.js](src/supabase.js)) — email/password sign-in, RLS-scoped queries, WebSocket realtime |
-| Writes | `fetch` via a thin wrapper ([src/api.js](src/api.js)) that hits the backend with the cached Supabase access token |
-| Dev / preview proxy | Vite's built-in proxy (`/api` → backend) |
+| Writes | `fetch` via a thin wrapper ([src/api.js](src/api.js)) that hits the backend directly with the cached Supabase access token (the backend validates the JWT) |
 
 ---
 
