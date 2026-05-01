@@ -274,6 +274,14 @@ function EditListModal({ onClose, onSaved, list }) {
 
 // ─── Edit Task Modal ──────────────────────────────────────────────────────────
 
+function sortTasks(a, b) {
+  if (a.is_completed !== b.is_completed) return a.is_completed - b.is_completed;
+  if (a.due_date && !b.due_date) return -1;
+  if (!a.due_date && b.due_date) return 1;
+  if (a.due_date && b.due_date) return new Date(a.due_date) - new Date(b.due_date);
+  return 0;
+}
+
 function isoToLocalInput(iso) {
   if (!iso) return '';
   const d = new Date(iso);
@@ -508,7 +516,7 @@ function Dashboard({ user, onLogout }) {
       }
       const { data, error } = await q;
       if (error) throw error;
-      const sorted = [...(data ?? [])].sort((a, b) => a.is_completed - b.is_completed);
+      const sorted = [...(data ?? [])].sort(sortTasks);
       setTasks(sorted);
     } catch (err) {
       console.error('Tasks fetch failed:', err.message);
@@ -600,19 +608,19 @@ function Dashboard({ user, onLogout }) {
             if (payload.eventType === 'INSERT') {
               if (prev.some((t) => t.id === payload.new.id)) return prev;
               if (!matchesConciseNow(payload.new)) return prev;
-              return [...prev, payload.new].sort((a, b) => a.is_completed - b.is_completed);
+              return [...prev, payload.new].sort(sortTasks);
             }
             if (payload.eventType === 'UPDATE') {
               const matches = matchesConciseNow(payload.new);
               const idx = prev.findIndex((t) => t.id === payload.new.id);
               if (idx === -1) {
                 if (!matches) return prev;
-                return [...prev, payload.new].sort((a, b) => a.is_completed - b.is_completed);
+                return [...prev, payload.new].sort(sortTasks);
               }
               if (!matches) return prev.filter((t) => t.id !== payload.new.id);
               const next = [...prev];
               next[idx] = payload.new;
-              return next.sort((a, b) => a.is_completed - b.is_completed);
+              return next.sort(sortTasks);
             }
             return prev;
           });
