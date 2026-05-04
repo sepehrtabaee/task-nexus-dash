@@ -278,8 +278,11 @@ function sortTasks(a, b) {
   if (a.is_completed !== b.is_completed) return a.is_completed - b.is_completed;
   if (a.due_date && !b.due_date) return -1;
   if (!a.due_date && b.due_date) return 1;
-  if (a.due_date && b.due_date) return new Date(a.due_date) - new Date(b.due_date);
-  return 0;
+  if (a.due_date && b.due_date) {
+    const dateDiff = new Date(a.due_date) - new Date(b.due_date);
+    if (dateDiff !== 0) return dateDiff;
+  }
+  return (b.priority ?? 1) - (a.priority ?? 1);
 }
 
 function isoToLocalInput(iso) {
